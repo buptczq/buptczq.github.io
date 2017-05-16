@@ -7,27 +7,57 @@
   <meta name="renderer" content="webkit">
   <meta name="theme-color" content="#ffffff">
   <link rel="stylesheet" href="./static/normalize.css">
+  <!-- use prism -->
+  <link rel="stylesheet" href="./static/prism.css">
   <!-- use element -->
   <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-default/index.css">
   <style type="text/css">
-  body{
-    font-family:PingFang SC,Hiragino Sans GB,Microsoft YaHei,Arial,sans-serif;
-    font-size:14px;
-    line-height:2;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-    -webkit-text-size-adjust:none;
-    position:relative;
-    max-width:700px;
-    margin:0 auto;
-    padding:0;
-    background:#fff;
-    color:#555
-  }
-  .hand{
-    cursor:pointer;
-  }
-
+    body{
+        font-family:PingFang SC,Hiragino Sans GB,Microsoft YaHei,Arial,sans-serif;
+        font-size:14px;
+        line-height:2;
+        -webkit-font-smoothing:antialiased;
+        -moz-osx-font-smoothing:grayscale;
+        -webkit-text-size-adjust:none;
+        position:relative;
+        max-width:700px;
+        margin:0 auto;
+        padding:0;
+        background:#fff;
+        color:#555
+    }
+    .hand{
+        cursor:pointer;
+    }
+    table 
+    { 
+        table-layout:fixed;
+        empty-cells:show;
+        border-collapse: collapse;
+        margin:0 auto;
+        border:1px solid #ccc;
+        color:#666;
+    } 
+    td,th{
+        border:1px solid #ccc;
+        padding:0 1em 0;
+    }
+    pre {
+        font-family:monospace,monospace;
+        font-size:1em;
+        background:#f7f7f7!important;
+        overflow-x:auto;
+        white-space:pre;
+        padding:16px;
+    }
+    code {
+        background:#f7f7f7;
+    }
+    blockquote {
+        border-left:4px solid #ddd;
+        margin:0;
+        padding:0 16px;
+    }
   </style>
 </head>
 
@@ -72,8 +102,10 @@
   <script src="https://unpkg.com/vue/dist/vue.js"></script>
   <!-- Element -->
   <script src="https://unpkg.com/element-ui/lib/index.js"></script>
-  <!-- Showdown.js -->
-  <script src="./static/showdown.min.js"></script>
+  <!-- Marked.js -->
+  <script src="./static/marked.min.js"></script>
+  <!-- Prism.js -->
+  <script src="./static/prism.js"></script>
   <!-- Axios -->
   <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   <script>
@@ -111,9 +143,11 @@
               const list = arr.map(({name, sha, size}) => ({
                 title: onlyTitle(name),
                 date: onlyDate(name),
+                timestamp: new Date(onlyDate(name)).getTime(),
                 sha,
                 size
               }))
+              list.sort(function(x,y){return y.timestamp-x.timestamp});
               // Save into cache
               Cache.set('pages', list)
               // ..then return
@@ -146,8 +180,23 @@
             })
         }
     }
-    // Showdown converter
-    var converter = new showdown.Converter();
+    function initMDRender(){
+        const renderer = new marked.Renderer()
+        renderer.heading = (text, level) => {
+            const slug = text.replace(/<(?:.|\n)*?>/gm, '').toLowerCase().replace(/[\s\n\t]+/g, '-')
+            return `<h${level} id="${slug}">${text}</h${level}>`
+        }
+        renderer.code = (code, lang) => {
+            const highlight = Prism.highlight(code, Prism.languages[lang] || Prism.languages.javascript)
+            return `<pre><code class="lang-${escape(lang, true)}">${highlight}</code></pre>`
+        }
+        marked.setOptions({
+            renderer,
+            breaks: true,
+            gfm: true
+        })
+    }
+    initMDRender();
     new Vue({
         el: '#app',
         data(){
@@ -183,7 +232,7 @@
                 this.pagedata="<center>Loading...</center>";
                 getDetail(page.sha)
                 .then(res => {
-                    this.pagedata=converter.makeHtml(res);
+                    this.pagedata=marked(res);
                 })
                 .catch(err => {
                     console.error(err)
