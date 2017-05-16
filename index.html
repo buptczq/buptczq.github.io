@@ -5,32 +5,64 @@
   <meta name="viewport" content="initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, user-scalable=no">
   <meta name="renderer" content="webkit">
   <meta name="theme-color" content="#ffffff">
+  <link rel="stylesheet" href="./static/normalize.css">
   <!-- use element -->
   <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-default/index.css">
+  <style type="text/css">
+  body{
+    font-family:PingFang SC,Hiragino Sans GB,Microsoft YaHei,Arial,sans-serif;
+    font-size:14px;
+    line-height:2;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+    -webkit-text-size-adjust:none;
+    position:relative;
+    max-width:700px;
+    margin:0 auto;
+    padding:0;
+    background:#fff;
+    color:#555
+  }
+  .hand{
+    cursor:pointer;
+  }
+  </style>
 </head>
 
 <body>
-  <div align="center" id="app">
+  <div id="app">
     <!-- title -->
     <br />
+    <div align="center">
     <el-row>
         <el-col :span="24">
         <h2>BUPTCZQ's Homepage</h2>
         </el-col>
     </el-row>
     <br />
+    </div>
     <!-- body -->
-    <el-row v-for="page in pages">
-        <el-col :span="24">
-        <p>{{ page.title }}</p>
-        </el-col>
-    </el-row>
-    <br />
-    <div v-html="test"></div>
+    <div v-loading="loading">
+        <div v-for="page in pages">
+        <el-card>
+            <p class="hand" v-on:click="showPage(page)">{{ page.title }}</p>
+            <p style="font-size: 10px;">{{ page.date }}</p>
+        </el-card>
+        <br />
+        </div>
+    </div>
+    <!-- view -->
+    <el-dialog v-model="visible" v-bind:title="pagetitle">
+    <div v-html="pagedata"></div>
+    </el-dialog>
     <!-- footer -->
+    <br />
+    <div align="center">
     <footer class="footer">
     Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
     </footer>
+    <br />
+    </div>
   </div>
 </body>
   <!-- Vue.js -->
@@ -57,28 +89,108 @@
         return Boolean(window.sessionStorage && window.sessionStorage.hasOwnProperty(key))
       }
     }
-    axios.get("./pages/test.md")
-    .then(res => {
-        console.log(res)
-    })
-    // Showdown converter
-    var converter = new showdown.Converter();
-    if(!Cache.has("pages")){
-        Cache.set("pages",[
-                { title: 'test1' },
-                { title: 'test2' },
-                { title: 'test3' }
-            ]);
+    function onlyTitle (title) {
+      return title.replace(/\.md$/, '')
+                  .replace(/^\d{4}-\d{1,2}-\d{1,2}-/, '')
     }
-    new Vue({
-      el: '#app',
-      data(){
-        return {
-            thisYear: new Date().getFullYear(), 
-            pages: Cache.get("pages"),
-            test: converter.makeHtml("# test")
+    function onlyDate (title) {
+      return /^\d{4}-\d{1,2}-\d{1,2}/.exec(title)[0]
+    }
+    function getPages () {
+        if (Cache.has('pages')) {
+            // Read from cache
+            return Promise.resolve(Cache.get('pages'))
+        } else {
+            return axios.get("https://api.github.com/repos/buptczq/buptczq.github.io/contents/pages")
+            .then(res => res.data)
+            .then(arr => {
+              // Data cleaning
+              const list = arr.map(({name, sha, size}) => ({
+                title: onlyTitle(name),
+                date: onlyDate(name),
+                sha,
+                size
+              }))
+              // Save into cache
+              Cache.set('pages', list)
+              // ..then return
+              return list
+          })
         }
     }
+    function getPostUrl (hash) {
+        // @see https://developer.github.com/v3/git/blobs/#get-a-blob
+        return `https://api.github.com/repos/buptczq/buptczq.github.io/git/blobs/${hash}`
+    }
+    function getDetail (hash) {
+        const httpOpts = {
+            // https://developer.github.com/v3/media/#raw-1
+            headers: { Accept: 'application/vnd.github.v3.raw' }
+        }
+        const cacheKey = 'post.' + hash
+
+        if (Cache.has(cacheKey)) {
+            // Read from cache
+            return Promise.resolve(Cache.get(cacheKey))
+        } else {
+            return axios.get(getPostUrl(hash), httpOpts)
+            .then(res => res.data)
+            .then(content => {
+                // Save into cache
+                Cache.set(cacheKey, content)
+                // ..then return
+                return content
+            })
+        }
+    }
+    // Showdown converter
+    var converter = new showdown.Converter();
+    new Vue({
+        el: '#app',
+        data(){
+            return {
+                thisYear: new Date().getFullYear(), 
+                pages: [],
+                loading: false,
+                visible: false,
+                pagedata: "",
+                pagetitle: "",
+            }
+        },
+        created () {
+            this.loadList()
+        },
+        methods: {
+            loadList () {
+                this.loading = true
+                getPages()
+                .then(pages => {
+                    this.pages = pages;
+                    setTimeout(() => {
+                        this.loading = false;
+                    }, 100);
+                })
+                .catch(err => {
+                    console.error(err);
+                    setTimeout(() => {
+                        this.loading = false;
+                    }, 100);
+                })
+            },
+            showPage(page) {
+                this.pagetitle=page.title;
+                this.pagedata="<center>Loading...</center>";
+                getDetail(page.sha)
+                .then(res => {
+                    this.pagedata=converter.makeHtml(res);
+                })
+                .catch(err => {
+                    console.error(err)
+                })
+                this.visible = true
+
+            }
+    },
     })
   </script>
 </html>
