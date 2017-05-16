@@ -27,6 +27,7 @@
   .hand{
     cursor:pointer;
   }
+
   </style>
 </head>
 
@@ -46,24 +47,25 @@
     <div v-loading="loading">
         <div v-for="page in pages">
         <el-card>
-            <p class="hand" v-on:click="showPage(page)">{{ page.title }}</p>
+            <h3 class="hand" v-on:click="showPage(page)">{{ page.title }}</h3>
             <p style="font-size: 10px;">{{ page.date }}</p>
         </el-card>
         <br />
         </div>
     </div>
     <!-- view -->
-    <el-dialog v-model="visible" v-bind:title="pagetitle">
+    <el-dialog v-model="visible">
     <div v-html="pagedata"></div>
     </el-dialog>
     <!-- footer -->
     <br />
-    <div align="center">
     <footer class="footer">
+    <div align="center">
     Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
-    </footer>
     <br />
+    Powered by <a href="https://www.vuejs.org">Vue.js</a>
     </div>
+    </footer>    
   </div>
 </body>
   <!-- Vue.js -->
@@ -155,7 +157,6 @@
                 loading: false,
                 visible: false,
                 pagedata: "",
-                pagetitle: "",
             }
         },
         created () {
@@ -179,7 +180,6 @@
                 })
             },
             showPage(page) {
-                this.pagetitle=page.title;
                 this.pagedata="<center>Loading...</center>";
                 getDetail(page.sha)
                 .then(res => {
