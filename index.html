@@ -1,26 +1,84 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, user-scalable=no">
+  <meta name="renderer" content="webkit">
+  <meta name="theme-color" content="#ffffff">
   <!-- use element -->
   <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-default/index.css">
 </head>
+
 <body>
-  <div id="app">
-  	<el-row>
-  		<el-col :span="24">
-  		<p>It works!</p>
-  		</el-col>
-  	</el-row>
+  <div align="center" id="app">
+    <!-- title -->
+    <br />
+    <el-row>
+        <el-col :span="24">
+        <h2>BUPTCZQ's Homepage</h2>
+        </el-col>
+    </el-row>
+    <br />
+    <!-- body -->
+    <el-row v-for="page in pages">
+        <el-col :span="24">
+        <p>{{ page.title }}</p>
+        </el-col>
+    </el-row>
+    <br />
+    <div v-html="test"></div>
+    <!-- footer -->
+    <footer class="footer">
+    Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
+    </footer>
   </div>
 </body>
-  <!-- Vue -->
+  <!-- Vue.js -->
   <script src="https://unpkg.com/vue/dist/vue.js"></script>
   <!-- Element -->
   <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+  <!-- Showdown.js -->
+  <script src="./static/showdown.min.js"></script>
+  <!-- Axios -->
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
   <script>
+    // Cache processor
+    const Cache = {
+      get: (key) => {
+        if (!window.sessionStorage) return false
+        return JSON.parse(window.sessionStorage.getItem(key))
+      },
+      set: (key, data) => {
+        if (!window.sessionStorage) return false
+        window.sessionStorage.setItem(key, JSON.stringify(data))
+        return true
+      },
+      has: (key) => {
+        return Boolean(window.sessionStorage && window.sessionStorage.hasOwnProperty(key))
+      }
+    }
+    axios.get("./pages/test.md")
+    .then(res => {
+        console.log(res)
+    })
+    // Showdown converter
+    var converter = new showdown.Converter();
+    if(!Cache.has("pages")){
+        Cache.set("pages",[
+                { title: 'test1' },
+                { title: 'test2' },
+                { title: 'test3' }
+            ]);
+    }
     new Vue({
-      el: '#app'
+      el: '#app',
+      data(){
+        return {
+            thisYear: new Date().getFullYear(), 
+            pages: Cache.get("pages"),
+            test: converter.makeHtml("# test")
+        }
+    }
     })
   </script>
 </html>
