@@ -131,6 +131,10 @@
     function onlyDate (title) {
       return /^\d{4}-\d{1,2}-\d{1,2}/.exec(title)[0]
     }
+    function str2time(str){
+        data=str.split("-")
+        return Date.parse([data[1],data[2],data[0]].join('/'))
+    }
     function getPages () {
         if (Cache.has('pages')) {
             // Read from cache
@@ -143,7 +147,7 @@
               const list = arr.map(({name, sha, size}) => ({
                 title: onlyTitle(name),
                 date: onlyDate(name),
-                timestamp: new Date(onlyDate(name)).getTime(),
+                timestamp: str2time(onlyDate(name)),
                 sha,
                 size
               }))
