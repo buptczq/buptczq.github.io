@@ -26,9 +26,6 @@
         background:#fff;
         color:#555
     }
-    .hand{
-        cursor:pointer;
-    }
     table 
     { 
         table-layout:fixed;
@@ -58,6 +55,24 @@
         margin:0;
         padding:0 16px;
     }
+    a {
+        text-decoration:none;
+        color:#08c;
+        overflow-wrap:break-word;
+        word-break:break-all;
+    }
+    .item-title {
+        display:inline-block;
+        margin-bottom:10px;
+        font-size:16px;
+        color:#555;
+    }
+    .item-title:hover {
+        color:#08c;
+    }
+    .hometitle {
+        color:#555;
+    }
   </style>
 </head>
 
@@ -68,38 +83,41 @@
     <div align="center">
     <el-row>
         <el-col :span="24">
-        <h2>BUPTCZQ's Homepage</h2>
+        <a class="hometitle" href="#/"><h2>BUPTCZQ's Homepage</h2></a>
         </el-col>
     </el-row>
     <br />
     </div>
     <!-- body -->
     <div v-loading="loading">
+        <!-- list -->
+        <div v-if="showlist">
         <div v-for="page in pages">
         <el-card>
-            <h3 class="hand" v-on:click="showPage(page)">{{ page.title }}</h3>
+            <a class="item-title" v-bind:href="'#/'+page.sha"><h3>{{ page.title }}</h3></a>
             <p style="font-size: 10px;">{{ page.date }}</p>
         </el-card>
         <br />
         </div>
+        </div>
+        <!-- pageview -->
+        <div v-else>
+            <div v-html="pagedata"></div>
+        </div>
     </div>
-    <!-- view -->
-    <el-dialog v-model="visible">
-    <div v-html="pagedata"></div>
-    </el-dialog>
     <!-- footer -->
     <br />
-    <footer class="footer">
+    <footer>
     <div align="center">
-    Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
-    <br />
-    Powered by <a href="https://www.vuejs.org">Vue.js</a>
+        Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
+        <br />
+        Powered by <a href="https://www.vuejs.org">Vue.js</a>
     </div>
-    </footer>    
+    </footer>
   </div>
 </body>
   <!-- Vue.js -->
-  <script src="https://unpkg.com/vue/dist/vue.js"></script>
+  <script src="https://unpkg.com/vue/dist/vue.min.js"></script>
   <!-- Element -->
   <script src="https://unpkg.com/element-ui/lib/index.js"></script>
   <!-- Marked.js -->
@@ -151,10 +169,9 @@
                 sha,
                 size
               }))
-              list.sort(function(x,y){return y.timestamp-x.timestamp});
+              list.sort(function(x,y){return y.timestamp - x.timestamp});
               // Save into cache
               Cache.set('pages', list)
-              // ..then return
               return list
           })
         }
@@ -201,6 +218,24 @@
         })
     }
     initMDRender();
+    function Router() {
+        this.currentUrl = '';
+        this.callback = function(x){};
+    }
+    Router.prototype.refresh = function() {
+        this.currentUrl = location.hash.slice(1) || '/';
+        this.callback(this.currentUrl);
+    };
+    Router.prototype.init = function() {
+        window.addEventListener('load', this.refresh.bind(this), false);
+        window.addEventListener('hashchange', this.refresh.bind(this), false);
+    }
+    Router.prototype.setCallback = function(callback) {
+        this.callback = callback;
+    }
+    window.Router = new Router();
+    window.Router.init();
+
     new Vue({
         el: '#app',
         data(){
@@ -208,14 +243,25 @@
                 thisYear: new Date().getFullYear(), 
                 pages: [],
                 loading: false,
-                visible: false,
                 pagedata: "",
+                showlist: true,
             }
         },
         created () {
-            this.loadList()
+            window.Router.setCallback(this.router);
         },
         methods: {
+            router(url){
+                args = url.split('/');
+                if(args.length == 2 && args[1].length > 0){
+                    this.showlist = false;
+                    this.showPage(args[1]);
+                }else{
+                    this.showlist = true;
+                    this.loadList();
+                }
+
+            },
             loadList () {
                 this.loading = true
                 getPages()
@@ -232,17 +278,21 @@
                     }, 100);
                 })
             },
-            showPage(page) {
-                this.pagedata="<center>Loading...</center>";
-                getDetail(page.sha)
+            showPage(hash) {
+                this.loading = true
+                getDetail(hash)
                 .then(res => {
                     this.pagedata=marked(res);
+                    setTimeout(() => {
+                        this.loading = false;
+                    }, 100);
                 })
                 .catch(err => {
                     console.error(err)
+                    setTimeout(() => {
+                        this.loading = false;
+                    }, 100);
                 })
-                this.visible = true
-
             }
     },
     })
