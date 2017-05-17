@@ -270,13 +270,13 @@
                     this.pages = pages;
                     setTimeout(() => {
                         this.loading = false;
-                    }, 100);
+                    }, 300);
                 })
                 .catch(err => {
                     console.error(err);
                     setTimeout(() => {
                         this.loading = false;
-                    }, 100);
+                    }, 300);
                 })
             },
             showPage(hash) {
@@ -286,13 +286,13 @@
                     this.pagedata=marked(res);
                     setTimeout(() => {
                         this.loading = false;
-                    }, 100);
+                    }, 300);
                 })
                 .catch(err => {
                     console.error(err)
                     setTimeout(() => {
                         this.loading = false;
-                    }, 100);
+                    }, 300);
                 })
             }
     },
