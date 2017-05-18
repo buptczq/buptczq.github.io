@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <title>BUPTCZQ's Homepage</title>
+  <title>BUPTCZQ[PG]</title>
   <meta name="viewport" content="initial-scale=1, maximum-scale=1, minimum-scale=1, width=device-width, user-scalable=no">
   <meta name="renderer" content="webkit">
   <meta name="theme-color" content="#ffffff">
@@ -84,11 +84,12 @@
     <div align="center">
     <el-row>
         <el-col :span="24">
-        <a class="hometitle" href="#/"><h2>BUPTCZQ's Homepage</h2></a>
+        <a class="hometitle" href="#/"><h1>BUPTCZQ[PG]</h1></a>
         </el-col>
     </el-row>
-    <br />
+    <em>Stay hungry. Stay foolish.</em>
     </div>
+    <br />
     <!-- body -->
     <div v-loading="loading">
         <!-- list -->
@@ -104,10 +105,18 @@
         <!-- pageview -->
         <div v-else>
             <div v-html="pagedata"></div>
+            <br />
         </div>
     </div>
-    <!-- footer -->
+    <!-- links -->
+    <div align="center">
+        <h3>Links</h3>
+        <div v-for="link in links">
+        <a v-bind:href="link.url" target="_blank" style="font-size: 10px;">{{ link.name }}</a>
+        </div>
+    </div>
     <br />
+    <!-- footer -->
     <footer>
     <div align="center">
         Copyright © {{ thisYear }} <a href="http://www.czq233.com">BUPTCZQ</a>
@@ -247,6 +256,10 @@
                 loading: false,
                 pagedata: "",
                 showlist: true,
+                links: [
+                {name:"张若岩的个人网站",url:"http://www.swzry.com/"},
+                {name:"Markdown Editor",url:"./markdown.html"},
+                ],
             }
         },
         created () {
@@ -281,6 +294,7 @@
                 })
             },
             showPage(hash) {
+                this.pagedata = ""
                 this.loading = true
                 getDetail(hash)
                 .then(res => {
