@@ -29,7 +29,7 @@
                     data.append('uid', uid);
                     data.append('rid', rid);
                     data.append('action', 'push');
-                    axios.post('https://api.czq233.com/rtc/invite', data)
+                    axios.post('https://api.czq233.com/rtc/invite', data, { withCredentials: true })
                         .then(function (response) {
                             if(response.data.code == 0){
                                 $('#token-input').val(response.data.token);
@@ -48,7 +48,7 @@
                     data.append('uid', uid);
                     data.append('rid', rid);
                     data.append('action', 'join');
-                    axios.post('https://api.czq233.com/rtc/invite', data)
+                    axios.post('https://api.czq233.com/rtc/invite', data, { withCredentials: true })
                         .then(function (response) {
                             if(response.data.code == 0){
                                 $('#token-input').val("https://www.czq233.com/otp/live.html?token="+response.data.token);

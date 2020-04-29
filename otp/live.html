@@ -14,8 +14,7 @@
             }
             $(document).ready(function() {
 				var token = getUrlParam("token")
-				Cookies.set('jwt', token, {expires: 7, path: '/', domain: 'czq233.com', secure: true});
-				let conn = new WebSocket('wss://api.czq233.com/rtc')
+				let conn = new WebSocket('wss://api.czq233.com/rtc?token='+token)
 				let pc = new RTCPeerConnection({
 					"ice_servers":[{ "urls" : "stun:stun.miwifi.com"},]
 				})

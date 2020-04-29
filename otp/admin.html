@@ -36,7 +36,7 @@
                     axios.get('https://api.czq233.com/admin', {params: {passcode:value, password: password}})
                         .then(function (response) {
                             Cookies.set('jwt', response.data.token, {expires: 7, path: '/', domain: 'czq233.com', secure: true});
-                            window.location.href = "/storage/admin.html";
+                            window.location.href = "https://api.czq233.com/storage/admin.html";
                         })
                         .catch(function (error) {
                             alert('Forbidden!');
