@@ -25,7 +25,7 @@
                 axios.get('https://api.czq233.com/check?app=admin', { withCredentials: true })
                     .then(function (response) {
                         if(response.data.admin){
-                            window.location.href = "/storage/admin.html";
+                            window.location.href = "https://api.czq233.com/storage/admin.html";
                         }
                     })
                     .catch(function (error) {

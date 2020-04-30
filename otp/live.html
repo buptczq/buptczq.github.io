@@ -27,13 +27,42 @@
             top: 0;
             width: 100%;
         }
+        .error-message {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+            height: 100%; 
+            overflow: hidden;
+            z-index: -1;
+        }
+        .log-head {
+            width : 100%;
+            height : 10%;
+            border: none;
+            padding: 0px;
+        }
+        textarea {
+            resize: none;
+            width : 100%;
+            height : 85%;
+            border: none;
+            padding: 0px;
+        }
     </style>
     <script src="./jquery-2.1.4.min.js" type="text/javascript"></script>
 </head>
 
 <body id="body">
-    <div class="content">
-        <video id="video1" playsinline controls preload="auto"></video>
+    <div class="content" id="video-player">
+        <video id="video1" playsinline preload="auto"></video>
+    </div>
+    <div class="error-message">
+        <div class="log-head">
+            <h3>WebRTC Failed</h3>
+            <a target="_blank" href="https://www.qcloudtrtc.com/webrtc-samples/abilitytest/index.html">WebRTC Test</a>
+        </div>
+        <textarea id="error"></textarea>
     </div>
     <script>
         function getUrlParam(name) {
@@ -41,9 +70,33 @@
             var r = window.location.search.substr(1).match(reg);
             if (r != null) return unescape(r[2]); return null;
         }
+        function showError() {
+            $('#video-player').remove();
+        }
+        function logError(logger, info) {
+            var str = $('#error').val() + logger + ' ' + info + "\n";
+            $('#error').val(str);
+        }
+        $('#video1').on('canplay', function (event) {
+            $(this).removeAttr("poster");
+        });
         $(document).ready(function () {
+            logError("[UA]", navigator.userAgent);
+            $("#video1").attr("poster", "loading.gif");
+            if(!window.WebSocket){
+                logError("[CAP]", "this browser does not support WebSocket");
+                showError();
+                return;
+            }
+            if(!window.RTCPeerConnection){
+                logError("[CAP]", "this browser does not support WebRTC");
+                showError();
+                return;
+            }
             var token = getUrlParam("token")
-            let conn = new WebSocket('wss://api.czq233.com/rtc?token='+token)
+            var url = "wss://api.czq233.com/rtc?token=" + token;
+            logError("[WebSocket]", "connect to " + url);
+            let conn = new WebSocket(url)
             let pc = new RTCPeerConnection({
                 "ice_servers": [{ "urls": "stun:stun.miwifi.com" },]
             })
@@ -53,18 +106,22 @@
                 }
                 var el = document.getElementById('video1');
                 el.srcObject = event.streams[0];
+                el.controls = true;
             }
 
             pc.onconnectionstatechange = function (event) {
-                console.log("state change", pc.connectionState);
+                logError("[ICE State]", pc.connectionState);
+                if(pc.connectionState == "failed"){
+                    showError();
+                }
             }
 
             pc.onicecandidate = (ice_event) => {
                 if (ice_event.candidate) {
-                    console.log("send ice candidate", ice_event.candidate)
+                    logError("[ICE Candidate]", 'send: ' + JSON.stringify(ice_event.candidate));
                     conn.send(JSON.stringify({ type: 'ice', data: ice_event.candidate }))
                 } else {
-                    console.log("ice gathering completed.")
+                    logError("[ICE Candidate]", "gathering completed");
                 }
             }
 
@@ -77,36 +134,45 @@
                 pc.addTransceiver('audio', { 'direction': 'recvonly' })
                 pc.createOffer(options).then(offer => {
                     pc.setLocalDescription(offer).then(() => {
-                        console.log('send offer', pc.localDescription.sdp)
+                        logError("[Local SDP]", pc.localDescription.sdp);
                         conn.send(JSON.stringify({ type: 'offer', data: pc.localDescription }))
                     })
                 })
             }
 
+            conn.onerror = evt => {
+                logError("[WebSocket]", "connection error");
+                showError();
+            }
+
             conn.onclose = evt => {
-                console.log('Connection closed')
+                logError("[WebSocket]", "connection closed");
+                showError();
             }
 
             conn.onmessage = evt => {
                 let msg = JSON.parse(evt.data)
                 if (!msg) {
-                    return console.log('failed to parse msg')
+                    logError("[WebSocket]", "invalid message:" + evt.data);
+                    return;
                 }
                 switch (msg.type) {
                     case 'answer':
                         answer = msg.data
-                        console.log('receive answer', answer.sdp)
+                        logError("[Remote SDP]", answer.sdp);
                         if (!answer) {
-                            return console.log('failed to parse answer')
+                            logError("[Remote SDP]", "failed to parse answer");
+                            return;
                         }
                         pc.setRemoteDescription(answer)
                         break
                     case 'ice':
                         iceData = msg.data
+                        logError("[ICE Trickle]", JSON.stringify(iceData));
                         if (!iceData) {
-                            return console.log('failed to parse ice data')
+                            logError("[ICE Trickle]", "failed to parse ice data");
+                            return;
                         }
-                        console.log("trickle ice candidate: ", iceData)
                         pc.addIceCandidate(
                             new RTCIceCandidate(iceData)
                         )
