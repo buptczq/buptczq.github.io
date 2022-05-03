@@ -60,6 +60,25 @@
                             alert(error);
                         })
                 });	
+                $("#join_play").click(function () {
+                    let uid = $('#uid-input').val();
+                    let rid = $('#rid-input').val();
+                    let data = new FormData();
+                    data.append('uid', uid);
+                    data.append('rid', rid);
+                    data.append('action', 'join');
+                    axios.post('https://api.czq233.com/rtc/invite', data, { withCredentials: true })
+                        .then(function (response) {
+                            if(response.data.code == 0){
+                                $('#token-input').val("https://www.czq233.com/otp/play.html?token="+response.data.token);
+                            }else{
+                                alert("error: " + response.data);
+                            }
+                        })
+                        .catch(function (error) {
+                            alert(error);
+                        })
+                });	
                 $('#pincode-input1').pincodeInput({hideDigits:false,inputs:6,complete:function(value, e, errorElement){
                     $.LoadingOverlay('show');
                     let password = $('#password-input').val();
@@ -87,6 +106,7 @@
                         <br/>
                         <input type="button" value="Invite To Push" id="push" />
                         <input type="button" value="Invite To Join" id="join" />
+                        <input type="button" value="Invite To Join (Player)" id="join_play" />
                         <br/>
                         <br/>
                         <h4>Token:</h4>
