@@ -166,6 +166,9 @@
                         logError("[WS] opened");
                         printchat("[Sys]", "收到母星信号。。。");
                         conn.send(JSON.stringify({ type: 'broadcast', data: '###!join' }))
+                        setInterval(()=>{
+                            conn.send(JSON.stringify({ type: 'keepalive', data: '###!ping' }))
+                        }, 3000);
                     }
                     
                     conn.onerror = evt => {
