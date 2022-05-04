@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0;"/>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
     <title>isshoni</title>
-    <link href="https://cdn.bootcdn.net/ajax/libs/video.js/7.19.2/alt/video-js-cdn.min.css" rel="stylesheet">
+    <link href="https://cdn.bootcdn.net/ajax/libs/video.js/7.19.2/alt/video-js-cdn.min.css" rel="stylesheet" />
     <style>
         body {
             padding: 0px;
@@ -97,6 +97,7 @@
         <textarea id="chat-input"></textarea>
     </div>
     <script>
+        window.player_version = "0.1.6";
         function getUrlParam(name) {
             var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
             var r = window.location.search.substr(1).match(reg);
@@ -138,6 +139,10 @@
                     logError("[WebSocket]", "connect to " + url);
                     let conn = new WebSocket(url)
                     
+                    document.querySelector("#myvideo").addEventListener("error", (event) => {
+                        logError("[video]", event.target.error.message);
+                    })
+                    
                     window.player = videojs("myvideo", {
                         autoplay: true,
                         bigPlayButton: true,
@@ -148,112 +153,122 @@
                             withCredentials: true
                         }
                     });
+
+                    window.player.on('error', function(e) {
+                        var error = window.player.error();
+                        logError("[videojs]", error.message);
+                        printchat("[Sys]", "嘤嘤嘤视频不见了, " + error.message);
+                    });  
                     
-                    // window.player.on('timeupdate', function() {
-                        //     console.log(`current: ${player.currentTime()}, total: ${player.duration()}`);
-                        // });
+                    $("#chat-input").keydown(function(ev){
+                        if (ev.keyCode == 13) {
+                            var msg = $(this).val();
+                            printchat("[我]", msg);
+                            window.conn.send(JSON.stringify({ type: 'broadcast', data: {
+                                type:'chat', data: msg,
+                                current: window.player.currentTime(), 
+                                total: window.player.duration(), }}));
+                                $(this).val("");
+                                return false;
+                            }
+                        });
                         
-                        $("#chat-input").keydown(function(ev){
-                            if (ev.keyCode == 13) {
-                                var msg = $(this).val();
-                                printchat("[我]", msg);
-                                window.conn.send(JSON.stringify({ type: 'broadcast', data: {
-                                    type:'chat', data: msg,
-                                    current: window.player.currentTime(), 
-                                    total: window.player.duration(), }}));
-                                    $(this).val("");
-                                    return false;
-                                }
-                            });
-                            
-                            conn.onopen = () => {
-                                logError("[WS] opened");
-                                printchat("[Sys]", "收到母星信号。。。");
-                                conn.send(JSON.stringify({ type: 'broadcast', data: '###!join' }))
-                                setInterval(()=>{
-                                    conn.send(JSON.stringify({
-                                        type: 'keepalive', 
-                                        data: {
-                                            type:'###!ping',
-                                            current: window.player.currentTime(),
-                                            total: window.player.duration(),
-                                        }, 
-                                    }))
-                                }, 3000);
-                            }
-                            
-                            conn.onerror = evt => {
-                                logError("[WebSocket]", "connection error");
-                                showError();
-                            }
-                            
-                            conn.onclose = evt => {
-                                logError("[WebSocket]", "connection closed");
-                                showError();
-                            }
-                            
-                            conn.onmessage = evt => {
-                                let data = JSON.parse(evt.data)
-                                if (!data) {
-                                    logError("[WebSocket]", "invalid message:" + evt.data);
-                                    return;
-                                }
-                                let msg = data.data;
-                                switch (msg.type) {
-                                    case 'url':
-                                    printchat("[Sys]", "收到视频指令。。。");
-                                    info = msg.data
-                                    logError("[Url]", info);
-                                    if (info.endsWith(".m3u8")) {
-                                        window.player.src({
-                                            src: info,
-                                            type: "application/x-mpegURL",
-                                        });
-                                    } else {
-                                        window.player.src({
-                                            src: info,
-                                        });
-                                    }
-                                    break
-                                    case 'time':
-                                    printchat("[Sys]", "收到指令,开始越迁至" + msg.data);
-                                    info = msg.data
-                                    logError("[Time]", info);
-                                    window.player.currentTime(info);
-                                    break
-                                    case 'pause':
-                                    printchat("[Sys]", "收到指令,原地待命");
-                                    info = msg.data
-                                    logError("[Pause]", info);
-                                    window.player.pause();
-                                    break
-                                    case 'play':
-                                    printchat("[Sys]", "收到指令,继续播放");
-                                    info = msg.data
-                                    logError("[Play]", info);
-                                    window.player.play();
-                                    break
-                                    case 'sys':
-                                    info = msg.data;
-                                    printchat("[广播]", info);
-                                    break
-                                    case 'chat':
-                                    info = msg.data;
-                                    printchat("["+data.user+"]", info);
-                                    break
-                                }
-                            }
-                            window.conn = conn
-                            
-                        } else {
-                            console.log(`current: ${player.currentTime()}, total: ${player.duration()}`);
+                        conn.onopen = () => {
+                            logError("[WebSocket]", "opened");
+                            printchat("[Sys]", "收到母星信号。。。");
+                            conn.send(JSON.stringify({ type: 'keepalive', data:{
+                                type:'join',
+                                version: window.player_version,
+                                ua: navigator.userAgent,
+                                now_ms: Date.now(),
+                            }}))
+                            setInterval(()=>{
+                                conn.send(JSON.stringify({
+                                    type: 'keepalive', 
+                                    data: {
+                                        type:'sync',
+                                        current: window.player.currentTime(),
+                                        total: window.player.duration(),
+                                        now_ms: Date.now(),
+                                    }, 
+                                }))
+                            }, 3000);
                         }
-                    });
-                    
-                    printchat("[Sys]", "等待召唤中。。。");
+                        
+                        conn.onerror = (evt) => {
+                            logError("[WebSocket]", "connection error");
+                            showError();
+                        }
+                        
+                        conn.onclose = (evt) => {
+                            logError("[WebSocket]", "connection closed");
+                            showError();
+                        }
+                        
+                        conn.onmessage = (evt) => {
+                            let data = JSON.parse(evt.data)
+                            if (!data) {
+                                logError("[WebSocket]", "invalid message:" + evt.data);
+                                return;
+                            }
+                            let msg = data.data;
+                            switch (msg.type) {
+                                case 'url':
+                                printchat("[Sys]", "收到视频指令。。。");
+                                info = msg.data
+                                logError("[Url]", info);
+                                if (info.endsWith(".m3u8")) {
+                                    window.player.src({
+                                        src: info,
+                                        type: "application/x-mpegURL",
+                                    });
+                                } else {
+                                    window.player.src({
+                                        src: info,
+                                    });
+                                }
+                                break
+                                case 'time':
+                                printchat("[Sys]", "收到指令,开始越迁至" + msg.data);
+                                info = msg.data
+                                logError("[Time]", info);
+                                window.player.currentTime(info);
+                                break
+                                case 'pause':
+                                printchat("[Sys]", "收到指令,原地待命");
+                                info = msg.data
+                                logError("[Pause]", info);
+                                window.player.pause();
+                                break
+                                case 'play':
+                                printchat("[Sys]", "收到指令,继续播放");
+                                info = msg.data
+                                logError("[Play]", info);
+                                window.player.play();
+                                break
+                                case 'sys':
+                                info = msg.data;
+                                printchat("[广播]", info);
+                                break
+                                case 'chat':
+                                info = msg.data;
+                                printchat("["+data.user+"]", info);
+                                break
+                            }
+                        }
+                        window.conn = conn
+                        
+                    } else {
+                        console.log(`current: ${player.currentTime()}, total: ${player.duration()}`);
+                    }
                 });
-            </script>
-            
-        </body>
-        </html>
-        
+                
+                printchat("[Sys]", "Version: " + window.player_version);
+                logError("[Sys]", "Version: " + window.player_version);
+                printchat("[Sys]", navigator.userAgent);
+                printchat("[Sys]", "等待召唤中。。。");
+            });
+        </script>
+    </body>
+    </html>
+    
