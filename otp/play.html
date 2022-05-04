@@ -204,10 +204,16 @@
                                     printchat("[Sys]", "收到视频指令。。。");
                                     info = msg.data
                                     logError("[Url]", info);
-                                    window.player.src({
-                                        src: info,
-                                        type: "application/x-mpegURL",
-                                    });
+                                    if (info.endsWith(".m3u8")) {
+                                        window.player.src({
+                                            src: info,
+                                            type: "application/x-mpegURL",
+                                        });
+                                    } else {
+                                        window.player.src({
+                                            src: info,
+                                        });
+                                    }
                                     break
                                     case 'time':
                                     printchat("[Sys]", "收到指令,开始越迁至" + msg.data);
