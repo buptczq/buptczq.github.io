@@ -97,7 +97,7 @@
         <textarea id="chat-input"></textarea>
     </div>
     <script>
-        window.player_version = "0.1.9";
+        window.player_version = "0.2.0";
         function guid() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                 var r = Math.random() * 16 | 0,
@@ -228,6 +228,23 @@
                     case 'chat':
                     info = msg.data;
                     printchat("["+data.user+"]", info);
+                    break
+                    case 'msg':
+                    info = msg.data;
+                    if (confirm(info)==true){ 
+                            window.conn.send(JSON.stringify({ type: 'broadcast', data: {
+                                type:'confirm', data: info,
+                                result: true,
+                                current: window.player.currentTime(), 
+                                current: window.player.currentTime(), 
+                                total: window.player.duration(), }}));
+                    } else {
+                            window.conn.send(JSON.stringify({ type: 'broadcast', data: {
+                                type:'confirm', data: info,
+                                result: false,
+                                current: window.player.currentTime(), 
+                                total: window.player.duration(), }}));
+                    }
                     break
                 }
             }
