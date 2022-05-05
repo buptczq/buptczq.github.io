@@ -97,7 +97,15 @@
         <textarea id="chat-input"></textarea>
     </div>
     <script>
-        window.player_version = "0.1.8";
+        window.player_version = "0.1.9";
+        function guid() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0,
+                v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+        window.player_sid = guid();
         function getUrlParam(name) {
             var reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)");
             var r = window.location.search.substr(1).match(reg);
@@ -238,8 +246,9 @@
                 if (window.first) {
                     window.first = false;
                     $("#myvideo").removeAttr("poster");
+                    printchat("[Sys]", "SID: " + window.player_sid);
                     var token = getUrlParam("token")
-                    var url = "wss://api.czq233.com/rtc?token=" + token;
+                    var url = "wss://api.czq233.com/rtc?token=" + token + "&sid=" + window.player_sid;
                     
                     document.querySelector("#myvideo").addEventListener("error", (event) => {
                         logError("[video]", event.target.error.message);
