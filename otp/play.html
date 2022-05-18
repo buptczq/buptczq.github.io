@@ -135,6 +135,7 @@
             let conn = new WebSocket(url)
             conn.onopen = () => {
                 window.wsRetry = 0;
+                window.wsReady = true;
                 logError("[WebSocket]", "opened");
                 printchat("[Sys]", "收到母星信号。。。");
                 conn.send(JSON.stringify({ type: 'keepalive', data:{
@@ -168,6 +169,7 @@
                 if (window.keepaliveFunc) {
                     clearInterval(window.keepaliveFunc);
                 }
+                window.wsReady = false;
                 window.wsRetry += 1;
                 if (window.wsRetry > 7) {
                     showError();
@@ -298,16 +300,24 @@
                     $("#chat-input").keydown(function(ev){
                         if (ev.keyCode == 13) {
                             var msg = $(this).val();
-                            printchat("[我]", msg);
+                            if (msg.length == 0) {
+                                return false;
+                            }
+                            if (!window.wsReady) {
+                                printchat("[Sys]", "发送失败，与母星失去连接。。。");
+                                return false;
+                            }
                             window.conn.send(JSON.stringify({ type: 'broadcast', data: {
                                 type:'chat', data: msg,
                                 current: window.player.currentTime(), 
                                 total: window.player.duration(), }}));
-                                $(this).val("");
-                                return false;
-                            }
+                            printchat("[我]", msg);
+                            $(this).val("");
+                            return false;
+                        }
                         });
                         window.wsRetry = 0;
+                        window.wsReady = false;
                         setupWebsocket(url);
                         
                     } else {
