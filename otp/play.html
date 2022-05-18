@@ -97,7 +97,7 @@
         <textarea id="chat-input"></textarea>
     </div>
     <script>
-        window.player_version = "0.2.0";
+        window.player_version = "0.2.1";
         function guid() {
             return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
                 var r = Math.random() * 16 | 0,
@@ -150,6 +150,7 @@
                             type:'sync',
                             current: window.player.currentTime(),
                             total: window.player.duration(),
+                            volume: window.player.volume(),
                             now_ms: Date.now(),
                         }, 
                     }))
@@ -208,6 +209,12 @@
                     info = msg.data
                     logError("[Time]", info);
                     window.player.currentTime(info);
+                    break
+                    case 'volume':
+                    printchat("[Sys]", "设置音量为" + msg.data);
+                    info = msg.data
+                    logError("[Volume]", info);
+                    window.player.volume(info);
                     break
                     case 'pause':
                     printchat("[Sys]", "收到指令,原地待命");
