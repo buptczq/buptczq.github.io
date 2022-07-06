@@ -177,7 +177,7 @@
             return Promise.resolve(Cache.get('pages'))
         } else {
             // Proxy to https://api.github.com/repos/buptczq/buptczq.github.io/contents/pages
-            return axios.get("https://blog.czq.workers.dev/pages")
+            return axios.get("https://www.czq233.com/api/pages")
             .then(res => res.data)
             .then(arr => {
               // Data cleaning
@@ -198,7 +198,7 @@
     function getPostUrl (hash) {
         // @see https://developer.github.com/v3/git/blobs/#get-a-blob
         // Proxy to https://api.github.com/repos/buptczq/buptczq.github.io/git/blobs/${hash}
-        return `https://blog.czq.workers.dev/blog/${hash}`
+        return `https://www.czq233.com/api/blog/${hash}`
     }
     function getDetail (hash) {
         const httpOpts = {
