@@ -21,11 +21,17 @@
         <script type="text/javascript" src="./loadingoverlay.min.js"></script>
         <script type="text/javascript" src="./bootstrap-pincode-input.js"></script>
         <script>
+            window.cookie_domain = "czq233.com"
+            window.cookie_secure = true
+            window.api_prefix = "https://api.czq233.com"
+            // window.cookie_domain = "localhost"
+            // window.cookie_secure = false
+            // window.api_prefix = "http://localhost:8080"
             $(document).ready(function() {
-                axios.get('https://api.czq233.com/check?app=admin', { withCredentials: true })
+                axios.get(window.api_prefix + '/check?app=admin', { withCredentials: true })
                     .then(function (response) {
                         if(response.data.admin){
-                            window.location.href = "https://api.czq233.com/storage/admin.html";
+                            window.location.href = window.api_prefix + "/storage/admin.html";
                         }
                     })
                     .catch(function (error) {
@@ -33,10 +39,10 @@
                 $('#pincode-input1').pincodeInput({hideDigits:false,inputs:6,complete:function(value, e, errorElement){
                     $.LoadingOverlay('show');
                     let password = $('#password-input').val();
-                    axios.get('https://api.czq233.com/admin', {params: {passcode:value, password: password}})
+                    axios.get(window.api_prefix + '/admin', {params: {passcode:value, password: password}})
                         .then(function (response) {
-                            Cookies.set('jwt', response.data.token, {expires: 7, path: '/', domain: 'czq233.com', secure: true});
-                            window.location.href = "https://api.czq233.com/storage/admin.html";
+                            Cookies.set('jwt', response.data.token, {expires: 7, path: '/', domain: window.cookie_domain, secure: window.cookie_secure});
+                            window.location.href = window.api_prefix + "/storage/admin.html";
                         })
                         .catch(function (error) {
                             alert('Forbidden!');
@@ -50,6 +56,74 @@
                 }});
                 $('#pincode-input1').pincodeInput().data('plugin_pincodeInput').focus();
             });
+
+            // Base64 to ArrayBuffer
+            function bufferDecode(value) {
+                let data = atob(value.replace(/-/g, "+").replace(/_/g, "/"));
+                return Uint8Array.from(data, c => c.charCodeAt(0));
+            }
+            
+            // ArrayBuffer to URLBase64
+            function bufferEncode(value) {
+                return btoa(String.fromCharCode.apply(null, new Uint8Array(value)))
+                .replace(/\+/g, "-")
+                .replace(/\//g, "_")
+                .replace(/=/g, "");;
+            }
+
+            function loginUser() {
+                axios.get(window.api_prefix +'/webauthn/admin/begin')
+                .then((resp) => {
+                    credentialRequestOptions = resp.data
+                    console.log(credentialRequestOptions)
+                    credentialRequestOptions.publicKey.challenge = bufferDecode(credentialRequestOptions.publicKey.challenge);
+                    credentialRequestOptions.publicKey.allowCredentials.forEach(function (listItem) {
+                        listItem.id = bufferDecode(listItem.id)
+                    });
+
+                    navigator.credentials.get({
+                        publicKey: credentialRequestOptions.publicKey
+                    })
+                    .then(function(assertion) {
+                        console.log(assertion)
+                        let authData = assertion.response.authenticatorData;
+                        let clientDataJSON = assertion.response.clientDataJSON;
+                        let rawId = assertion.rawId;
+                        let sig = assertion.response.signature;
+                        let userHandle = assertion.response.userHandle;
+
+                        axios.post(window.api_prefix +'/webauthn/admin/finish',
+                            {
+                                id: assertion.id,
+                                rawId: bufferEncode(rawId),
+                                type: assertion.type,
+                                response: {
+                                    authenticatorData: bufferEncode(authData),
+                                    clientDataJSON: bufferEncode(clientDataJSON),
+                                    signature: bufferEncode(sig),
+                                    userHandle: bufferEncode(userHandle),
+                                },
+                        })
+                        .then(function (response) {
+                            Cookies.set('jwt', response.data.token, {expires: 7, path: '/', domain: window.cookie_domain, secure: window.cookie_secure});
+                            window.location.href = window.api_prefix + "/storage/admin.html";
+                        })
+                        .catch((error) => {
+                            console.log(error)
+                            alert("failed to register: stage finish")
+                        })
+                    })
+                    .catch((error) => {
+                        console.log(error)
+                        alert("failed to login: stage credentials.get")
+                    })
+                })
+                .catch((error) => {
+                    console.log(error)
+                    alert("failed to login: stage begin")
+                })
+
+            };
         </script>
     </head>
     <body>
@@ -58,6 +132,9 @@
             <div class="container-fluid">
                 <div class="row">
                     <div class="col-md-12">
+                        <br/>
+                        <button onclick="loginUser()">Use WebAuthn</button>
+                        <br/>
                         <br/>
                         <h4>My Password:</h4>
                         <br/>
