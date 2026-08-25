@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LLM MoE Prefill / Decode 算力与内存估算器</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --card: #0f172a;
+      --border: #24324d;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --red: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(56,189,248,0.12), transparent 30%),
+        radial-gradient(circle at top right, rgba(74,222,128,0.08), transparent 25%),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container { max-width: 1560px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 28px; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    .note { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      gap: 16px;
+    }
+    .results-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent), var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+    }
+    .card.wide { grid-column: 1 / -1; }
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    input, select {
+      width: 100%;
+      margin-top: 6px;
+      padding: 9px 10px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #0a1120;
+      color: var(--text);
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(56,189,248,0.12);
+    }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .checkbox {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+    .checkbox input { width: auto; margin: 0; }
+    .result-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 14px;
+    }
+    .result-row:last-child { border-bottom: none; }
+    .result-row span { color: var(--muted); }
+    .result-row strong {
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      word-break: break-word;
+    }
+    .subsection {
+      margin: 16px 0 6px;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(56,189,248,0.12);
+      color: var(--accent);
+      font-size: 12px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .error {
+      color: var(--red);
+      background: rgba(248,113,113,0.08);
+      border: 1px solid rgba(248,113,113,0.25);
+      padding: 12px;
+      border-radius: 12px;
+      line-height: 1.6;
+    }
+    .muted { color: var(--muted); font-size: 13px; }
+    code { color: #a5f3fc; }
+    @media (max-width: 1100px) {
+      .results-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      LLM MoE Prefill / Decode 估算器
+    </h1>
+
+    <p class="note">
+      支持 Dense / MoE、Hybrid <code>linear_attention + full_attention</code>、显式 <code>head_dim</code>、
+      <code>full_attention_layers</code>、Top-K Expert 活跃 FLOPs 和专家权重读取估算。
+      内存访问为算法级估算，实际会受专家并行、权重缓存、PagedAttention、算子融合等影响。
+    </p>
+
+    <div class="grid">
+      <!-- 模型参数 -->
+      <section class="card">
+        <h2>模型参数</h2>
+
+        <label>
+          参数预设
+          <select id="preset">
+            <option value="custom">自定义</option>
+            <option value="qwen3.6-35b-a3b">Qwen3.6-35B-A3B / Qwen3.5 MoE Text</option>
+            <option value="qwen3.8-27b-approx">Qwen3.8-27B / Qwen3.5 Text，近似</option>
+            <option value="llama3-8b">LLaMA-3 8B</option>
+            <option value="llama2-7b">LLaMA-2 7B</option>
+          </select>
+        </label>
+
+        <div class="row">
+          <label>
+            dim / hidden_size
+            <input id="dim" class="model-input" type="number" min="1" step="1" value="2048" />
+          </label>
+          <label>
+            dense hidden_dim
+            <input id="hidden_dim" class="model-input" type="number" min="0" step="1" value="0" />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            n_layers
+            <input id="n_layers" class="model-input" type="number" min="1" step="1" value="40" />
+          </label>
+          <label>
+            vocab_size
+            <input id="vocab_size" class="model-input" type="number" min="1" step="1" value="248320" />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            n_heads
+            <input id="n_heads" class="model-input" type="number" min="1" step="1" value="16" />
+          </label>
+          <label>
+            n_kv_heads
+            <input id="n_kv_heads" class="model-input" type="number" min="1" step="1" value="2" />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            head_dim，0 = dim / n_heads
+            <input id="head_dim" class="model-input" type="number" min="0" step="1" value="256" />
+          </label>
+          <label>
+            full attention 层数，0 = n_layers
+            <input id="n_full_attn_layers" class="model-input" type="number" min="0" step="1" value="10" />
+          </label>
+        </div>
+
+        <label>
+          FFN / Expert 类型
+          <select id="ffn_type" class="model-input">
+            <option value="swiglu" selected>SwiGLU / GeGLU，3 个矩阵</option>
+            <option value="classic">Classic FFN，2 个矩阵</option>
+          </select>
+        </label>
+
+        <div class="muted">
+          Hybrid 架构：KV Cache 和长序列 Attention 只按 <code>full attention 层数</code> 计算。
+        </div>
+      </section>
+
+      <!-- MoE 参数 -->
+      <section class="card">
+        <h2>MoE 参数</h2>
+
+        <div class="row">
+          <label>
+            num_experts，0 = Dense
+            <input id="num_experts" class="model-input" type="number" min="0" step="1" value="256" />
+          </label>
+          <label>
+            experts_per_tok / top_k
+            <input id="experts_per_tok" class="model-input" type="number" min="0" step="1" value="8" />
+          </label>
+        </div>
+
+        <div class="row">
+          <label>
+            moe_intermediate_size
+            <input id="moe_intermediate_size" class="model-input" type="number" min="0" step="1" value="512" />
+          </label>
+          <label>
+            shared_expert_intermediate_size
+            <input id="shared_expert_intermediate_size" class="model-input" type="number" min="0" step="1" value="512" />
+          </label>
+        </div>
+
+        <label>
+          专家权重读取模式
+          <select id="expert_read_mode" class="model-input">
+            <option value="distinct" selected>批内去重：min(E, tokens × top_k)</option>
+            <option value="per_token">每 token 重复读：tokens × top_k</option>
+            <option value="all">全量专家读取：E</option>
+          </select>
+        </label>
+
+        <div class="muted">
+          MoE 推理权重读取不是固定值。  
+          <code>distinct</code> 适合估算一个 batch / prefill chunk 内专家权重去重后的读取量。  
+          <code>per_token</code> 更保守，假设每个 token 都重复读取专家权重。  
+          <code>all</code> 按每层读取全部专家权重，接近稠密上限。
+        </div>
+      </section>
+
+      <!-- 运行参数 -->
+      <section class="card">
+        <h2>运行参数</h2>
+
+        <div class="row">
+          <label>
+            Batch Size
+            <input id="batch_size" type="number" min="1" step="1" value="1" />
+          </label>
+          <label>
+            Prompt / Prefill 长度
+            <input id="prompt_len" type="number" min="0" step="1" value="2048" />
+          </label>
+        </div>
+
+        <label>
+          Decode 生成 token 数
+          <input id="gen_len" type="number" min="0" step="1" value="128" />
+        </label>
+
+        <div class="checkbox">
+          <input id="causal" type="checkbox" checked />
+          <label for="causal" style="margin:0;color:var(--text);">因果注意力 Causal Attention</label>
+        </div>
+
+        <div class="checkbox">
+          <input id="include_norm" type="checkbox" />
+          <label for="include_norm" style="margin:0;color:var(--text);">粗略计入 Norm / Residual 内存流量</label>
+        </div>
+
+        <label>
+          Prefill logits 计算范围
+          <select id="prefill_logits">
+            <option value="last" selected>仅最后一个位置，常见推理</option>
+            <option value="all">所有位置，常见训练</option>
+          </select>
+        </label>
+
+        <div class="muted">
+          Decode 第 1 个生成 token 的上下文长度 = <code>Prompt 长度 + 1</code>。
+        </div>
+      </section>
+
+      <!-- 精度 / 量化 -->
+      <section class="card">
+        <h2>精度 / 量化</h2>
+
+        <label>
+          模型权重量化等级
+          <select id="weight_bytes">
+            <option value="4">FP32，4 Bytes</option>
+            <option value="2">FP16 / BF16，2 Bytes</option>
+            <option value="1" selected>FP8 / INT8，1 Byte</option>
+            <option value="0.5">INT4，0.5 Byte</option>
+          </select>
+        </label>
+
+        <label>
+          激活精度
+          <select id="act_bytes">
+            <option value="4">FP32，4 Bytes</option>
+            <option value="2" selected>FP16 / BF16，2 Bytes</option>
+            <option value="1">FP8 / INT8，1 Byte</option>
+          </select>
+        </label>
+
+        <label>
+          KV Cache 精度
+          <select id="kv_bytes">
+            <option value="4">FP32，4 Bytes</option>
+            <option value="2" selected>FP16 / BF16，2 Bytes</option>
+            <option value="1">FP8 / INT8，1 Byte</option>
+            <option value="0.5">INT4，0.5 Byte</option>
+          </select>
+        </label>
+
+        <div class="muted">
+          Qwen3.6 MoE config 中提供了 <code>quantization_config: fp8</code>，
+          因此预设默认将权重量化设为 <code>FP8 / INT8 = 1 Byte</code>。  
+          如需 BF16 估算，请手动改回 2 Bytes。
+        </div>
+      </section>
+    </div>
+
+    <section class="card wide" style="margin-top:16px;">
+      <h2>模型派生参数</h2>
+      <div id="derived"></div>
+    </section>
+
+    <div class="results-grid">
+      <section class="card">
+        <h2>Prefill 结果 <span class="badge">Forward</span></h2>
+        <div id="prefillResults"></div>
+      </section>
+
+      <section class="card">
+        <h2>Decode 结果 <span class="badge">Forward</span></h2>
+        <div id="decodeResults"></div>
+      </section>
+
+      <section class="card wide">
+        <h2>KV Cache 大小</h2>
+        <div id="kvResults"></div>
+      </section>
+    </div>
+
+    <section class="card wide" style="margin-top:16px;">
+      <h2>说明</h2>
+      <div class="muted">
+        1. MoE FLOPs 按 Top-K routed experts + shared expert 计算：<br />
+        <code>top_k × expert_ffn + shared_expert_ffn + router</code>。<br /><br />
+        2. MoE 权重读取支持三种模式。默认 <code>distinct</code>：一个 prefill chunk 或一个 decode step 内，
+        每层最多读取 <code>min(num_experts, tokens × top_k)</code> 个 routed expert。<br /><br />
+        3. Qwen3.6 / Qwen3.5 MoE 是 Hybrid 架构：<code>linear_attention + full_attention</code>。
+        本计算器只把 full attention 层计入增长型 KV Cache 和二次注意力 FLOPs；linear attention 的固定状态、
+        卷积、特殊投影未精确建模。<br /><br />
+        4. Vision Tower、MTP、attn_output_gate、router auxiliary loss 等未计入。  
+        这里估算的是 text decoder 主体的近似值。
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    const presets = {
+      "qwen3.6-35b-a3b": {
+        dim: 2048,
+        hidden_dim: 0,
+        n_layers: 40,
+        n_heads: 16,
+        n_kv_heads: 2,
+        vocab_size: 248320,
+        ffn_type: "swiglu",
+        head_dim: 256,
+        n_full_attn_layers: 10,
+
+        num_experts: 256,
+        experts_per_tok: 8,
+        moe_intermediate_size: 512,
+        shared_expert_intermediate_size: 512,
+        expert_read_mode: "distinct",
+
+        weight_bytes: "1",
+        act_bytes: "2",
+        kv_bytes: "2"
+      },
+
+      "qwen3.8-27b-approx": {
+        dim: 5120,
+        hidden_dim: 17408,
+        n_layers: 64,
+        n_heads: 24,
+        n_kv_heads: 4,
+        vocab_size: 248320,
+        ffn_type: "swiglu",
+        head_dim: 256,
+        n_full_attn_layers: 16,
+
+        num_experts: 0,
+        experts_per_tok: 0,
+        moe_intermediate_size: 0,
+        shared_expert_intermediate_size: 0,
+        expert_read_mode: "distinct",
+
+        weight_bytes: "2",
+        act_bytes: "2",
+        kv_bytes: "2"
+      },
+
+      "llama3-8b": {
+        dim: 4096,
+        hidden_dim: 14336,
+        n_layers: 32,
+        n_heads: 32,
+        n_kv_heads: 8,
+        vocab_size: 128256,
+        ffn_type: "swiglu",
+        head_dim: 0,
+        n_full_attn_layers: 0,
+
+        num_experts: 0,
+        experts_per_tok: 0,
+        moe_intermediate_size: 0,
+        shared_expert_intermediate_size: 0,
+        expert_read_mode: "distinct",
+
+        weight_bytes: "2",
+        act_bytes: "2",
+        kv_bytes: "2"
+      },
+
+      "llama2-7b": {
+        dim: 4096,
+        hidden_dim: 11008,
+        n_layers: 32,
+        n_heads: 32,
+        n_kv_heads: 32,
+        vocab_size: 32000,
+        ffn_type: "swiglu",
+        head_dim: 0,
+        n_full_attn_layers: 0,
+
+        num_experts: 0,
+        experts_per_tok: 0,
+        moe_intermediate_size: 0,
+        shared_expert_intermediate_size: 0,
+        expert_read_mode: "distinct",
+
+        weight_bytes: "2",
+        act_bytes: "2",
+        kv_bytes: "2"
+      }
+    };
+
+    const expertModeLabels = {
+      distinct: "批内去重 min(E, tokens × top_k)",
+      per_token: "每 token 重复读 tokens × top_k",
+      all: "全量专家读取 E"
+    };
+
+    function num(id) {
+      const x = parseFloat($(id).value);
+      return Number.isFinite(x) ? x : 0;
+    }
+
+    function fmtMetric(x, unit = "") {
+      if (!Number.isFinite(x)) return "-";
+      if (x === 0) return unit ? `0 ${unit}` : "0";
+
+      const sign = x < 0 ? -1 : 1;
+      x = Math.abs(x);
+
+      const prefixes = ["", "K", "M", "G", "T", "P", "E"];
+      let i = 0;
+
+      while (x >= 1000 && i < prefixes.length - 1) {
+        x /= 1000;
+        i++;
+      }
+
+      const decimals = x >= 100 ? 1 : x >= 10 ? 2 : 3;
+      return `${sign < 0 ? "-" : ""}${x.toFixed(decimals)} ${prefixes[i]}${unit}`.trim();
+    }
+
+    function fmtBytes(x) {
+      if (!Number.isFinite(x) || x <= 0) return "0 B";
+
+      const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+      let i = 0;
+
+      while (x >= 1024 && i < units.length - 1) {
+        x /= 1024;
+        i++;
+      }
+
+      const decimals = x >= 100 ? 1 : 2;
+      return `${x.toFixed(decimals)} ${units[i]}`;
+    }
+
+    function row(name, value) {
+      return `<div class="result-row"><span>${name}</span><strong>${value}</strong></div>`;
+    }
+
+    function setPreset(name) {
+      const p = presets[name];
+      if (!p) return;
+
+      const merged = {
+        head_dim: 0,
+        n_full_attn_layers: 0,
+        ffn_type: "swiglu",
+
+        num_experts: 0,
+        experts_per_tok: 0,
+        moe_intermediate_size: 0,
+        shared_expert_intermediate_size: 0,
+        expert_read_mode: "distinct",
+
+        weight_bytes: "2",
+        act_bytes: "2",
+        kv_bytes: "2",
+
+        ...p
+      };
+
+      for (const [k, v] of Object.entries(merged)) {
+        if ($(k)) $(k).value = v;
+      }
+    }
+
+    function calculate() {
+      const d = num("dim");
+      const h = num("hidden_dim");
+      const L = num("n_layers");
+      const H = num("n_heads");
+      const Hkv = num("n_kv_heads");
+      const V = num("vocab_size");
+
+      const B = num("batch_size");
+      const S = num("prompt_len");
+      const G = num("gen_len");
+
+      const causal = $("causal").checked;
+      const includeNorm = $("include_norm").checked;
+      const logitsMode = $("prefill_logits").value;
+      const ffnType = $("ffn_type").value;
+
+      const betaW = parseFloat($("weight_bytes").value);
+      const betaA = parseFloat($("act_bytes").value);
+      const betaKV = parseFloat($("kv_bytes").value);
+
+      const E = Math.max(0, Math.floor(num("num_experts")));
+      let K = Math.max(0, Math.floor(num("experts_per_tok")));
+      const moeInt = num("moe_intermediate_size");
+      const sharedInt = num("shared_expert_intermediate_size");
+      const expertReadMode = $("expert_read_mode").value;
+
+      const isMoE = E > 0;
+      if (isMoE) K = Math.min(K, E);
+
+      const derivedEl = $("derived");
+      const prefillEl = $("prefillResults");
+      const decodeEl = $("decodeResults");
+      const kvEl = $("kvResults");
+
+      const errors = [];
+
+      if (!(d > 0)) errors.push("dim");
+      if (!(L > 0)) errors.push("n_layers");
+      if (!(H > 0)) errors.push("n_heads");
+      if (!(Hkv > 0)) errors.push("n_kv_heads");
+      if (!(V > 0)) errors.push("vocab_size");
+      if (!(B > 0)) errors.push("batch_size");
+      if (!(S >= 0)) errors.push("prompt_len");
+      if (!(G >= 0)) errors.push("gen_len");
+
+      if (!isMoE && !(h > 0)) {
+        errors.push("hidden_dim，Dense 模式需要大于 0");
+      }
+
+      if (isMoE) {
+        if (!(K > 0)) errors.push("experts_per_tok");
+        if (!(moeInt > 0)) errors.push("moe_intermediate_size");
+      }
+
+      if (errors.length) {
+        const err = `<div class="error">请输入有效数值：${errors.join("、")}</div>`;
+        derivedEl.innerHTML = err;
+        prefillEl.innerHTML = err;
+        decodeEl.innerHTML = err;
+        kvEl.innerHTML = err;
+        return;
+      }
+
+      const headDimInput = num("head_dim");
+      const headDim = headDimInput > 0 ? headDimInput : d / H;
+
+      const qDim = H * headDim;
+      const dKv = Hkv * headDim;
+
+      const fullAttnInput = num("n_full_attn_layers");
+      const Lfull = fullAttnInput > 0 ? Math.min(fullAttnInput, L) : L;
+
+      const cFfn = ffnType === "swiglu" ? 6 : 4;
+      const ffnMult = cFfn / 2;
+
+      const attnParamsPerLayer = 2 * d * (qDim + dKv);
+
+      const denseFFNParams = ffnMult * d * h;
+
+      const expertParams = ffnMult * d * moeInt;
+      const sharedParams = sharedInt > 0 ? ffnMult * d * sharedInt : 0;
+      const routerParams = d * E;
+
+      const ffnParamsPerLayer = isMoE
+        ? routerParams + E * expertParams + sharedParams
+        : denseFFNParams;
+
+      const ffnActiveParamsPerLayer = isMoE
+        ? routerParams + K * expertParams + sharedParams
+        : denseFFNParams;
+
+      const outputParams = d * V;
+
+      const coreParams =
+        L * (attnParamsPerLayer + ffnParamsPerLayer) + outputParams;
+
+      const activeCoreParams =
+        L * (attnParamsPerLayer + ffnActiveParamsPerLayer) + outputParams;
+
+      const nonExpertParamsPerLayer =
+        attnParamsPerLayer +
+        (isMoE ? routerParams + sharedParams : denseFFNParams);
+
+      const baseWeightElements =
+        L * nonExpertParamsPerLayer + outputParams;
+
+      function routedExpertsRead(tokens) {
+        if (!isMoE || tokens <= 0) return 0;
+
+        if (expertReadMode === "all") return E;
+        if (expertReadMode === "per_token") return tokens * K;
+
+        return Math.min(E, tokens * K);
+      }
+
+      function weightReadBytes(tokens) {
+        if (tokens <= 0) return 0;
+
+        const routed = isMoE
+          ? L * routedExpertsRead(tokens) * expertParams
+          : 0;
+
+        return (baseWeightElements + routed) * betaW;
+      }
+
+      const Sout = logitsMode === "all" ? S : (S > 0 ? 1 : 0);
+      const hasPrefill = S > 0;
+      const M = B * S;
+      const Mout = B * Sout;
+
+      /*
+        Prefill FLOPs
+      */
+      const Pprefill = causal ? (S * (S + 1)) / 2 : S * S;
+
+      const flopsProjPrefill = 4 * B * S * d * (qDim + dKv);
+      const flopsAttnPrefill = 4 * B * qDim * Pprefill;
+
+      const ffnFlopsPerTokenLayer = isMoE
+        ? cFfn * d * (K * moeInt + sharedInt) + 2 * d * E
+        : cFfn * d * h;
+
+      const flopsFfnPrefill = B * S * ffnFlopsPerTokenLayer;
+      const flopsLogitsPrefill = 2 * B * Sout * d * V;
+
+      const flopsPrefill =
+        L * (flopsProjPrefill + flopsFfnPrefill) +
+        Lfull * flopsAttnPrefill +
+        flopsLogitsPrefill;
+
+      /*
+        Prefill memory
+      */
+      const weightReadPrefill = hasPrefill ? weightReadBytes(M) : 0;
+      const kvReadPrefill = hasPrefill ? 2 * Lfull * B * S * dKv * betaKV : 0;
+
+      let actReadPrefill =
+        (L * M * (2 * d + 2 * qDim) + M * d + Mout * d) * betaA;
+
+      let actWritePrefill =
+        (L * M * (2 * d + 2 * qDim) + M * d + Mout * V) * betaA;
+
+      if (isMoE && M > 0) {
+        actReadPrefill += L * M * E * betaA;
+        actWritePrefill += L * M * E * betaA;
+      }
+
+      let kvWritePrefill = 2 * Lfull * M * dKv * betaKV;
+
+      if (includeNorm) {
+        actReadPrefill += (6 * L + 1) * M * d * betaA;
+        actWritePrefill += (4 * L + 1) * M * d * betaA;
+      }
+
+      const readPrefill = weightReadPrefill + kvReadPrefill + actReadPrefill;
+      const writePrefill = kvWritePrefill + actWritePrefill;
+
+      const flopsPerPrefillToken = S > 0 ? flopsPrefill / (B * S) : 0;
+      const aiPrefill = readPrefill > 0 ? flopsPrefill / readPrefill : 0;
+
+      /*
+        Decode FLOPs and memory
+      */
+      const contextsSum = G * S + (G * (G + 1)) / 2;
+      const firstContext = S + 1;
+
+      const flopsProjDecodeStep = 4 * B * d * (qDim + dKv);
+      const flopsFfnDecodeStep = B * ffnFlopsPerTokenLayer;
+      const flopsLogitsDecodeStep = 2 * B * d * V;
+
+      const flopsDecodeFixed =
+        L * (flopsProjDecodeStep + flopsFfnDecodeStep) +
+        flopsLogitsDecodeStep;
+
+      const flopsDecodeFirst =
+        G > 0
+          ? flopsDecodeFixed + 4 * B * qDim * Lfull * firstContext
+          : 0;
+
+      const flopsDecodeTotal =
+        G > 0
+          ? G * flopsDecodeFixed + 4 * B * qDim * Lfull * contextsSum
+          : 0;
+
+      const flopsDecodeAvg = G > 0 ? flopsDecodeTotal / G : 0;
+
+      const weightReadDecodeStep = weightReadBytes(B);
+
+      let actReadDecodeStep =
+        (L * B * (2 * d + 2 * qDim) + B * d + B * d) * betaA;
+
+      let actWriteDecodeStep =
+        (L * B * (2 * d + 2 * qDim) + B * d + B * V) * betaA;
+
+      if (isMoE && B > 0) {
+        actReadDecodeStep += L * B * E * betaA;
+        actWriteDecodeStep += L * B * E * betaA;
+      }
+
+      if (includeNorm) {
+        actReadDecodeStep += (6 * L + 1) * B * d * betaA;
+        actWriteDecodeStep += (4 * L + 1) * B * d * betaA;
+      }
+
+      const kvWriteDecodeStep = 2 * Lfull * B * dKv * betaKV;
+
+      const kvReadDecodeFirst =
+        G > 0
+          ? 2 * Lfull * B * firstContext * dKv * betaKV
+          : 0;
+
+      const readDecodeFirst =
+        G > 0
+          ? weightReadDecodeStep + kvReadDecodeFirst + actReadDecodeStep
+          : 0;
+
+      const writeDecodeFirst =
+        G > 0
+          ? kvWriteDecodeStep + actWriteDecodeStep
+          : 0;
+
+      const weightReadDecodeTotal = G * weightReadDecodeStep;
+      const kvReadDecodeTotal = 2 * Lfull * B * dKv * contextsSum * betaKV;
+      const actReadDecodeTotal = G * actReadDecodeStep;
+
+      const kvWriteDecodeTotal = G * kvWriteDecodeStep;
+      const actWriteDecodeTotal = G * actWriteDecodeStep;
+
+      const readDecodeTotal =
+        weightReadDecodeTotal + kvReadDecodeTotal + actReadDecodeTotal;
+
+      const writeDecodeTotal =
+        kvWriteDecodeTotal + actWriteDecodeTotal;
+
+      const readDecodeAvg = G > 0 ? readDecodeTotal / G : 0;
+      const writeDecodeAvg = G > 0 ? writeDecodeTotal / G : 0;
+      const aiDecodeAvg = readDecodeAvg > 0 ? flopsDecodeAvg / readDecodeAvg : 0;
+
+      /*
+        KV cache
+      */
+      const kvPerTokenPerSeqElems = 2 * Lfull * dKv;
+      const kvPerTokenPerSeqBytes = kvPerTokenPerSeqElems * betaKV;
+
+      const kvAfterPrefillPerSeqBytes = 2 * Lfull * S * dKv * betaKV;
+      const kvAfterPrefillTotalBytes = 2 * Lfull * B * S * dKv * betaKV;
+
+      const finalLen = S + G;
+      const kvAfterDecodePerSeqBytes = 2 * Lfull * finalLen * dKv * betaKV;
+      const kvAfterDecodeTotalBytes = 2 * Lfull * B * finalLen * dKv * betaKV;
+
+      /*
+        Render
+      */
+      derivedEl.innerHTML = [
+        row("架构", isMoE ? `MoE，E=${E}，top-${K}${sharedInt > 0 ? "，含 shared expert" : ""}` : "Dense"),
+        row("head_dim", headDim.toLocaleString()),
+        row("Attention Q 总宽度 / q_dim", fmtMetric(qDim, "")),
+        row("KV 总宽度 / d_kv", fmtMetric(dKv, "")),
+        row("Full attention 层数", `${Lfull} / ${L}`),
+        row("Linear attention 层数", `${L - Lfull} / ${L}`),
+        row("每层 Attention 权重参数", fmtMetric(attnParamsPerLayer, "params")),
+        row("每层 FFN 总权重参数", fmtMetric(ffnParamsPerLayer, "params")),
+        row("每层 FFN 活跃权重参数", fmtMetric(ffnActiveParamsPerLayer, "params")),
+        row("总权重参数，text 近似", fmtMetric(coreParams, "params")),
+        row("每 token 活跃权重参数，近似", fmtMetric(activeCoreParams, "params")),
+        row("权重存储，按当前权重量化", fmtBytes(coreParams * betaW)),
+        row("KV Cache 每 token 每序列", fmtBytes(kvPerTokenPerSeqBytes)),
+        row("专家权重读取模式", expertModeLabels[expertReadMode] || expertReadMode),
+      ].join("");
+
+      prefillEl.innerHTML = [
+        row("Prefill 总 FLOPs", fmtMetric(flopsPrefill, "FLOP")),
+        row("每 token FLOPs", fmtMetric(flopsPerPrefillToken, "FLOP/token")),
+        row("算术强度，FLOPs / 读取字节", aiPrefill.toFixed(3)),
+        `<div class="subsection">内存读取</div>`,
+        row("总读取", fmtBytes(readPrefill)),
+        row("权重读取，含专家", fmtBytes(weightReadPrefill)),
+        row("KV Cache 读取，下界", fmtBytes(kvReadPrefill)),
+        row("激活 / Router / Logits 读取", fmtBytes(actReadPrefill)),
+        `<div class="subsection">内存写入</div>`,
+        row("总写入", fmtBytes(writePrefill)),
+        row("KV Cache 写入", fmtBytes(kvWritePrefill)),
+        row("激活 / Router / Logits 写入", fmtBytes(actWritePrefill)),
+      ].join("");
+
+      if (G <= 0) {
+        decodeEl.innerHTML = `<div class="muted">Decode 生成 token 数为 0，未计算 Decode。</div>`;
+      } else {
+        decodeEl.innerHTML = [
+          row("第 1 个 Decode token 上下文长度", firstContext.toLocaleString()),
+          row("第 1 个 Decode token FLOPs", fmtMetric(flopsDecodeFirst, "FLOP")),
+          row(`Decode 总 FLOPs，生成 ${G} tokens`, fmtMetric(flopsDecodeTotal, "FLOP")),
+          row("Decode 平均 FLOPs / token", fmtMetric(flopsDecodeAvg, "FLOP/token")),
+          row("Decode 平均算术强度，FLOPs / 读取字节", aiDecodeAvg.toFixed(3)),
+
+          `<div class="subsection">第 1 步内存</div>`,
+          row("第 1 步读取", fmtBytes(readDecodeFirst)),
+          row("第 1 步写入", fmtBytes(writeDecodeFirst)),
+
+          `<div class="subsection">总内存，生成 ${G} tokens</div>`,
+          row("总读取", fmtBytes(readDecodeTotal)),
+          row("总写入", fmtBytes(writeDecodeTotal)),
+          row("平均读取 / token", fmtBytes(readDecodeAvg)),
+          row("平均写入 / token", fmtBytes(writeDecodeAvg)),
+
+          `<div class="subsection">总读取组成</div>`,
+          row("权重读取，含专家", fmtBytes(weightReadDecodeTotal)),
+          row("KV Cache 读取", fmtBytes(kvReadDecodeTotal)),
+          row("激活 / Router / Logits 读取", fmtBytes(actReadDecodeTotal)),
+
+          `<div class="subsection">总写入组成</div>`,
+          row("KV Cache 写入", fmtBytes(kvWriteDecodeTotal)),
+          row("激活 / Router / Logits 写入", fmtBytes(actWriteDecodeTotal)),
+        ].join("");
+      }
+
+      kvEl.innerHTML = [
+        row("每 token 每序列 KV Cache", fmtBytes(kvPerTokenPerSeqBytes)),
+        row("每层每 token KV Cache 元素数", fmtMetric(2 * dKv, "elements")),
+        row(`Prefill 后 KV Cache，长度 ${S}，每序列`, fmtBytes(kvAfterPrefillPerSeqBytes)),
+        row(`Prefill 后 KV Cache，长度 ${S}，batch 总计`, fmtBytes(kvAfterPrefillTotalBytes)),
+        row(`Decode 后 KV Cache，长度 ${finalLen}，每序列`, fmtBytes(kvAfterDecodePerSeqBytes)),
+        row(`Decode 后 KV Cache，长度 ${finalLen}，batch 总计`, fmtBytes(kvAfterDecodeTotalBytes)),
+        `<div class="muted" style="margin-top:10px;">
+          KV Cache 公式：<code>2 × full_attention_layers × seq_len × d_kv × bytes × batch_size</code>。
+        </div>`
+      ].join("");
+    }
+
+    $("preset").addEventListener("change", (e) => {
+      setPreset(e.target.value);
+      calculate();
+    });
+
+    document.querySelectorAll(".model-input").forEach((el) => {
+      el.addEventListener("input", () => {
+        $("preset").value = "custom";
+      });
+    });
+
+    document.querySelectorAll("input, select:not(#preset)").forEach((el) => {
+      el.addEventListener("input", calculate);
+      el.addEventListener("change", calculate);
+    });
+
+    calculate();
+  </script>
+</body>
+</html>
